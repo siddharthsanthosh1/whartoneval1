@@ -1,4 +1,4 @@
-!pip install yfinance requests beautifulsoup4
+pip install yfinance requests beautifulsoup4
 
 import yfinance as yf
 import pandas as pd

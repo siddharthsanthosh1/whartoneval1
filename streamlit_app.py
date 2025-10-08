@@ -7,6 +7,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import random
 import time
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
+import os
 
 # Page configuration
 st.set_page_config(
@@ -115,6 +119,7 @@ def normalize(series, inverse=False):
     else:
         return 100 * (series - series.min()) / (series.max() - series.min())
 
+@st.cache_data(ttl=86400)  # Cache for 24 hours
 def get_esg_data(ticker):
     """Get ESG data for a company with MTWB community focus"""
     if ticker in ESG_SAMPLE_DATA:
@@ -127,8 +132,9 @@ def get_esg_data(ticker):
             "community_initiatives": "Various community engagement programs"
         }
 
+@st.cache_data(ttl=86400)  # Cache for 24 hours
 def calculate_esg_score(ticker):
-    """Calculate MTWB ESG Score (0-25 points)"""
+    """Calculate MTWB ESG Score (0-25 points) with caching"""
     esg_data = get_esg_data(ticker)
     
     esg_rating_score = ESG_RATING_SCORES.get(esg_data["esg_rating"], 50)
@@ -147,8 +153,11 @@ def calculate_esg_score(ticker):
         "esg_score": esg_score
     }
 
-def get_stock_data(ticker):
-    """Get comprehensive stock data including ESG"""
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+@st.experimental_memo(ttl=3600)  # For older Streamlit versions
+@lru_cache(maxsize=32)  # In-memory cache for frequently accessed data
+def get_stock_data_cached(ticker):
+    """Get comprehensive stock data including ESG with caching"""
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
@@ -164,28 +173,39 @@ def get_stock_data(ticker):
         market_cap = info.get("marketCap", np.nan)
         current_price = info.get("currentPrice", np.nan)
         
-        # ESG data
+        # ESG data - call the cached version
         esg_data = calculate_esg_score(ticker)
         
-        return {
+        result = {
             "ticker": ticker,
             "sector": sector,
             "current_price": current_price,
             "market_cap": market_cap,
             "pe_ratio": pe_ratio,
             "beta": beta,
-            "dividend_yield": dividend_yield * 100,  # Convert to percentage
-            "profit_margin": profit_margin * 100,    # Convert to percentage
-            "roe": roe * 100,                        # Convert to percentage
-            "fiftytwo_wk_change": fiftytwo_wk_change * 100,  # Convert to percentage
+            "dividend_yield": dividend_yield * 100,
+            "profit_margin": profit_margin * 100 if not pd.isna(profit_margin) else np.nan,
+            "roe": roe * 100 if not pd.isna(roe) else np.nan,
+            "fiftytwo_wk_change": fiftytwo_wk_change * 100 if not pd.isna(fiftytwo_wk_change) else np.nan,
             **esg_data
         }
+        
+        return result
     except Exception as e:
         st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
 
+def get_stock_data(ticker):
+    """Wrapper function to handle the cached stock data retrieval"""
+    try:
+        return get_stock_data_cached(ticker)
+    except Exception as e:
+        st.error(f"Error in cached data retrieval for {ticker}: {str(e)}")
+        return None
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def calculate_mtwb_score(stock_data):
-    """Calculate MTWB comprehensive score"""
+    """Calculate MTWB comprehensive score with caching"""
     if not stock_data:
         return None
     
@@ -254,14 +274,28 @@ def calculate_mtwb_score(stock_data):
 
 # Main app
 def main():
-    # Header
-    st.markdown("""
+    # Add a progress bar for better UX during data loading
+    progress_bar = st.progress(0)
+    
+    # Header with loading state
+    header = st.empty()
+    header.markdown("""
     <div class="main-header">
         <h1>🏛️ MTWB Stock Evaluator</h1>
         <h3>Making the World Better Through Investment</h3>
         <p>Evaluating investments through the lens of financial performance and community impact</p>
+        <p>⏳ Loading data, please wait...</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Initialize session state for caching
+    if 'stock_data' not in st.session_state:
+        st.session_state.stock_data = {}
+    if 'esg_data' not in st.session_state:
+        st.session_state.esg_data = {}
+    
+    # Update progress
+    progress_bar.progress(10)
     
     # Sidebar
     with st.sidebar:

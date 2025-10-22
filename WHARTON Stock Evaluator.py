@@ -1,6 +1,5 @@
-pip install yfinance requests beautifulsoup4
-
 import yfinance as yf
+import sys
 import pandas as pd
 import numpy as np
 import requests
@@ -214,60 +213,166 @@ df["mtwb_score"] = (
 
 df["mtwb_score"] = normalize(df["mtwb_score"])
 
-# --- Sector mapping into 4 categories ---
+# --- Updated Sector Mapping ---
 sector_map = {
-    "Industrials": "Industrial",
-    "Basic Materials": "Industrial",
-    "Energy": "Industrial",
-    "Utilities": "Industrial",
-    "Financial Services": "Industrial",
-    "Real Estate": "Industrial",
-    "Consumer Cyclical": "Consumer",
-    "Technology": "Consumer",
-    "Communication Services": "Consumer",
-    "Consumer Defensive": "Consumer Defensive",
-    "Healthcare": "Clinical",
-    "Biotechnology": "Clinical",
-    "Pharmaceuticals": "Clinical"
+    # Industrials
+    "Industrials": "Industrials",
+    "Industrial": "Industrials",
+    "Aerospace & Defense": "Industrials",
+    "Business Services": "Industrials",
+    "Conglomerates": "Industrials",
+    "Engineering & Construction": "Industrials",
+    "Marine Shipping": "Industrials",
+    "Transportation": "Industrials",
+    "Trucking": "Industrials",
+    
+    # Real Estate
+    "Real Estate": "Real Estate",
+    "REIT": "Real Estate",
+    "Real Estate - General": "Real Estate",
+    
+    # Utilities
+    "Utilities": "Utilities",
+    "Utilities - Regulated": "Utilities",
+    "Utilities - Independent Power Producers": "Utilities",
+    
+    # Consumer Staples
+    "Consumer Defensive": "Consumer Staples",
+    "Consumer Staples": "Consumer Staples",
+    "Beverages": "Consumer Staples",
+    "Food": "Consumer Staples",
+    "Household Products": "Consumer Staples",
+    "Tobacco": "Consumer Staples",
+    
+    # Healthcare
+    "Healthcare": "Healthcare",
+    "Biotechnology": "Healthcare",
+    "Pharmaceuticals": "Healthcare",
+    "Medical": "Healthcare",
+    "Healthcare Plans": "Healthcare",
+    
+    # Technology
+    "Technology": "Technology",
+    "Software": "Technology",
+    "Hardware": "Technology",
+    "Semiconductors": "Technology",
+    
+    # Financials
+    "Financial Services": "Financials",
+    "Banks": "Financials",
+    "Insurance": "Financials",
+    "Capital Markets": "Financials",
+    
+    # Energy
+    "Energy": "Energy",
+    "Oil & Gas": "Energy",
+    
+    # Communication Services
+    "Communication Services": "Communication Services",
+    "Telecom": "Communication Services",
+    "Media": "Communication Services",
+    
+    # Consumer Discretionary
+    "Consumer Cyclical": "Consumer Discretionary",
+    "Consumer Discretionary": "Consumer Discretionary",
+    "Retail": "Consumer Discretionary",
+    "Automotive": "Consumer Discretionary",
+    
+    # Materials
+    "Basic Materials": "Materials",
+    "Chemicals": "Materials",
+    "Metals & Mining": "Materials",
+    "Paper & Forest Products": "Materials"
 }
 
 df["main_sector"] = df["sector"].map(sector_map).fillna("Other")
 
-# --- Ask User ---
-choice = input("Do you want STOCKS or ETFS? ").strip().lower()
+# --- User Selection ---
+print("\n" + "="*80)
+print("MTWB STOCK & ETF EVALUATOR")
+print("="*80)
+
+# First choice: Stocks or ETFs
+while True:
+    choice = input("\nDo you want to analyze STOCKS or ETFS? ").strip().lower()
+    if choice in ['stocks', 'etfs']:
+        break
+    print("Please enter either 'stocks' or 'etfs'")
 
 if choice == "stocks":
-    print("\nAvailable Sectors: Industrial, Consumer, Clinical, Consumer Defensive, ALL")
-    sector_choice = input("Choose a sector: ").strip()
+    # Define available sectors
+    sectors = [
+        "All Sectors",
+        "Industrials",
+        "Real Estate",
+        "Utilities",
+        "Consumer Staples",
+        "Healthcare",
+        "Technology",
+        "Financials",
+        "Energy",
+        "Communication Services",
+        "Consumer Discretionary",
+        "Materials"
+    ]
+    
+    # Display sector menu
+    print("\nAvailable Sectors:")
+    for i, sector in enumerate(sectors, 1):
+        print(f"{i}. {sector}")
+    
+    # Get sector selection
+    while True:
+        try:
+            selection = int(input("\nSelect a sector (1-11): "))
+            if 1 <= selection <= len(sectors):
+                selected_sector = sectors[selection-1]
+                break
+            print(f"Please enter a number between 1 and {len(sectors)}")
+        except ValueError:
+            print("Please enter a valid number")
+    
+    # Apply sector filter if not "All Sectors"
+    result = df[~df["etf"]]
+    if selected_sector != "All Sectors":
+        result = result[result["main_sector"] == selected_sector]
+    
+    # Sort and get top 50
+    result = result.sort_values("mtwb_score", ascending=False).head(50)
+    
+    # Display results
+    print(f"\n{'='*80}")
+    print(f"TOP 50 STOCKS - {selected_sector.upper()}")
+    print("="*80)
+    print("\nRank | Ticker | MTWB Score | Sector | ESG Rating | Price | 52Wk Change")
+    print("-" * 80)
+    
+    for idx, (_, row) in enumerate(result.iterrows(), 1):
+        ticker = row['company']
+        score = f"{row['mtwb_score']:.1f}"
+        sector = row['main_sector']
+        esg_rating = row['esg_rating']
+        price = f"${row.get('currentPrice', row.get('regularMarketPrice', 'N/A'))}"
+        change_52wk = f"{row['fiftytwo_wk_change']*100:.1f}%" if not pd.isna(row['fiftytwo_wk_change']) else "N/A"
+        
+        print(f"{idx:4d} | {ticker:6s} | {score:>9} | {sector[:15]:<15} | {esg_rating:^9} | {price:>7} | {change_52wk:>10}")
 
-    if sector_choice.lower() == "all":
-        result = df[(df["etf"] == False)].sort_values("mtwb_score", ascending=False).head(10)
-    else:
-        result = df[(df["etf"] == False) & 
-                    (df["main_sector"].str.lower() == sector_choice.lower())] \
-                    .sort_values("mtwb_score", ascending=False).head(10)
-
-elif choice == "etfs":
-    result = df[(df["etf"] == True)].sort_values("mtwb_score", ascending=False).head(10)
-else:
-    result = df.sort_values("mtwb_score", ascending=False).head(20)
-
-print("\n" + "="*80)
-print("MTWB STOCK EVALUATOR - ESG & SUSTAINABILITY INTEGRATED")
-print("="*80)
-print("\nTop Selections:")
-print("-" * 80)
-
-# Display results with ESG information
-for idx, row in result.iterrows():
-    print(f"\n{row['company']} ({row['sector']})")
-    print(f"  MTWB Score: {row['mtwb_score']:.1f}/100")
-    if not row['etf']:  # Only show ESG details for stocks
-        print(f"  ESG Rating: {row['esg_rating']} | ESG Score: {row['esg_score']:.1f}/25")
-        print(f"  Carbon Targets: {row['carbon_targets']}/100 | Community Engagement: {row['community']}/100")
-    else:
-        print(f"  ETF - ESG scores not applicable")
-    print(f"  Main Sector: {row['main_sector']}")
+else:  # ETFs
+    result = df[df["etf"]].sort_values("mtwb_score", ascending=False).head(50)
+    print("\n" + "="*80)
+    print("TOP 50 ETFS")
+    print("="*80)
+    print("\nRank | Ticker | MTWB Score | Category | Price | 52Wk Change")
+    print("-" * 70)
+    
+    for idx, (_, row) in enumerate(result.iterrows(), 1):
+        ticker = row['company']
+        score = f"{row['mtwb_score']:.1f}"
+        category = row['sector']
+        price = f"${row.get('currentPrice', row.get('regularMarketPrice', 'N/A'))}"
+        change_52wk = f"{row['fiftytwo_wk_change']*100:.1f}%" if not pd.isna(row['fiftytwo_wk_change']) else "N/A"
+        
+        print(f"{idx:4d} | {ticker:6s} | {score:>9} | {category[:15]:<15} | {price:>7} | {change_52wk:>10}")
 
 print("\n" + "="*80)
 print("ESG SCORING BREAKDOWN:")

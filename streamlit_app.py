@@ -154,7 +154,6 @@ def calculate_esg_score(ticker):
     }
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
-@st.experimental_memo(ttl=3600)  # For older Streamlit versions
 @lru_cache(maxsize=32)  # In-memory cache for frequently accessed data
 def get_stock_data_cached(ticker):
     """Get comprehensive stock data including ESG with caching"""
